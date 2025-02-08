@@ -405,3 +405,4 @@ CMD ["gunicorn", "-b", "0.0.0.0:8000", "config.wsgi:application"]
 - [ ] Redis Authentication
 - [ ] Concurrency
 - [ ] Exponential backoffs
+- [ ] Scheduled tasks
