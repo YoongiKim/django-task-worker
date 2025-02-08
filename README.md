@@ -229,6 +229,7 @@ from django_simple_task_worker.models import DatabaseTask
 ```
 
 #### **DatabaseTask Fields**:
+- `id` (str): Short UUID for the task.
 - `name` (str): The task function in the format `module_name.function_name`.
 - `args` (JSON): Positional arguments for the task.
 - `kwargs` (JSON): Keyword arguments for the task.
