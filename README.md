@@ -406,3 +406,5 @@ CMD ["gunicorn", "-b", "0.0.0.0:8000", "config.wsgi:application"]
 - [ ] Concurrency
 - [ ] Exponential backoffs
 - [ ] Scheduled tasks
+- [ ] Advanced django admin
+- [ ] Detailed error logging
