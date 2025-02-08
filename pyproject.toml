@@ -3,9 +3,9 @@ requires = ["setuptools>=65.5.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "django-simple-task-worker"
-version = "0.1.0"
-description = "A simple task worker for Django using Redis and a database queue"
+name = "django-task-worker"
+version = "0.0.2"
+description = "Task worker for Django using Redis and a database queue"
 readme = "README.md"
 requires-python = ">=3.6"
 license = {text = "Apache License 2.0"}
@@ -16,7 +16,7 @@ maintainers = [
     {name = "Yoongi Kim", email = "yoongi@yoongi.kim"}
 ]
 
-keywords = ["django", "task", "worker", "queue", "redis"]
+keywords = ["django", "task", "async", "worker", "queue", "redis"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",
@@ -39,9 +39,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YoongiKim/django-simple-task-worker"
-Repository = "https://github.com/YoongiKim/django-simple-task-worker"
-"Bug Tracker" = "https://github.com/YoongiKim/django-simple-task-worker/issues"
+Homepage = "https://github.com/YoongiKim/django-task-worker"
+Repository = "https://github.com/YoongiKim/django-task-worker"
+"Bug Tracker" = "https://github.com/YoongiKim/django-task-worker/issues"
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9.0"]
@@ -51,7 +51,7 @@ dev = [
 ]
 
 [project.scripts]
-run-worker = "django_simple_task_worker.worker:run_worker"
+run-worker = "django_task_worker.worker:run_worker"
 
 [tool.setuptools.packages.find]
-include = ["django_simple_task_worker", "django_simple_task_worker.*"]
+include = ["django_task_worker", "django_task_worker.*"]

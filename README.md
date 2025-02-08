@@ -1,6 +1,6 @@
-# django-simple-task-worker
+# django-task-worker
 
-A simple Django-based task worker that uses the database as a persistent queue and Redis for Pub/Sub messaging. This project is designed to solve common issues with traditional task queues like Celery by offering a lightweight, reliable, and cost-effective solution.
+A Django-based task worker that uses the database as a persistent queue and Redis for Pub/Sub messaging. This project is designed to solve common issues with traditional task queues like Celery by offering a lightweight, reliable, and cost-effective solution.
 
 ---
 
@@ -12,7 +12,7 @@ Traditional task queues like [Celery](https://docs.celeryproject.org/) rely on e
 2. **Cluster Complexity**: Setting up a high-availability cluster for Redis or RabbitMQ is complex and resource-intensive.
 3. **Cost**: Cloud-hosted Redis instances are expensive, especially for small-scale projects that only need basic task queuing.
 
-### **Why django-simple-task-worker?**
+### **Why django-task-worker?**
 
 This project aims to address these issues by:
 
@@ -52,7 +52,7 @@ This project aims to address these issues by:
 1. Install the package:
 
    ```bash
-   pip install django-simple-task-worker
+   pip install django-task-worker
    ```
 
 2. Add `worker` to your `INSTALLED_APPS` in `settings.py`:
@@ -60,7 +60,7 @@ This project aims to address these issues by:
    ```python
    INSTALLED_APPS = [
        ...,
-       "django_simple_task_worker",
+       "django_task_worker",
    ]
    ```
 
@@ -76,7 +76,7 @@ This project aims to address these issues by:
 4. Run migrations to create the `DatabaseTask` table:
 
    ```bash
-   python manage.py makemigrations django_simple_task_worker
+   python manage.py makemigrations django_task_worker
    python manage.py migrate
    ```
 
@@ -114,7 +114,7 @@ your_project/
 ├── your_app/
 │   ├── your_tasks.py        # Define task functions here
 │   └── models.py
-└── django_simple_task_worker/  # Which is installed via pip
+└── django_task_worker/  # Which is installed via pip
     ├── models.py            # Includes DatabaseTask
     ├── client.py            # Provides create_task and wait_for_completion
     └── worker.py            # Worker logic
@@ -139,7 +139,7 @@ def add_numbers(a, b):
 Use `create_task` to add a task to the database and notify the worker:
 
 ```
-from django_simple_task_worker.client import create_task
+from django_task_worker.client import create_task
 
 task = create_task(
     name="your_app.your_tasks.add_numbers",  # Function path
@@ -170,7 +170,7 @@ The worker will process tasks in the background.
 Use `wait_for_completion` to wait for a task to finish:
 
 ```
-from django_simple_task_worker.client import wait_for_completion
+from django_task_worker.client import wait_for_completion
 
 result = wait_for_completion(task_id=task.id, timeout=10)
 
@@ -225,7 +225,7 @@ def wait_for_completion(task_id, timeout=300) -> DatabaseTask | None:
 All tasks are stored in the database using the `DatabaseTask` model:
 
 ```
-from django_simple_task_worker.models import DatabaseTask
+from django_task_worker.models import DatabaseTask
 ```
 
 #### **DatabaseTask Fields**:
@@ -250,7 +250,7 @@ from django_simple_task_worker.models import DatabaseTask
 
 2. **Create and Run the Task**:
    ```
-   from django_simple_task_worker.client import create_task, wait_for_completion
+   from django_task_worker.client import create_task, wait_for_completion
 
    # Create a task
    task = create_task("your_app.your_tasks.multiply_numbers", args=[2, 3])

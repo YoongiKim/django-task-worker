@@ -2,7 +2,7 @@ import json
 import time
 import redis
 from django.conf import settings
-from worker.models import DatabaseTask
+from django_task_worker.models import DatabaseTask
 
 REDIS_URL = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "task_events"

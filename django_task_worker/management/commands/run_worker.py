@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from worker.worker import run_worker
+from django_task_worker.worker import run_worker
 
 class Command(BaseCommand):
     help = "Run the background worker loop for tasks."
