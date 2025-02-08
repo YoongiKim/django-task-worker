@@ -27,23 +27,23 @@ This project aims to address these issues by:
 - **Database-Backed Queue**: Tasks are stored persistently in a Django model (`DatabaseTask`), ensuring no data loss even if Redis is restarted or flushed. This eliminates the need for Redis persistence.
 - **Redis Pub/Sub for Real-Time Notifications**: Redis is used exclusively for lightweight Pub/Sub messaging, sending notifications for task creation and completion. The task queue itself is stored and managed in the database.
 - **Task Status Management**: The system uses four statuses to track task progress:
-   - **`PENDING`**: Task is waiting to be processed.
-   - **`PROGRESS`**: Task is currently being processed by a worker.
-   - **`COMPLETED`**: Task has been successfully processed.
-   - **`FAILED`**: Task has failed due to an error or timeout.
+  - **`PENDING`**: Task is waiting to be processed.
+  - **`PROGRESS`**: Task is currently being processed by a worker.
+  - **`COMPLETED`**: Task has been successfully processed.
+  - **`FAILED`**: Task has failed due to an error or timeout.
 - **Timeout Handling**: Tasks can have a configurable `timeout` (default: 300 seconds). If a task exceeds its timeout, it is forcefully terminated to prevent it from hanging indefinitely and marked as `FAILED`.
 - **Retry Logic**: Failed tasks are retried automatically up to a configurable maximum retry count (`MAX_RETRIES`). Once retries are exhausted, the task is permanently marked as `FAILED`.
 - **Stale Task Detection**: If a worker crashes while processing a task (`PROGRESS`), the system detects and marks it as `FAILED` or re-queues it for retry based on its retry count. This ensures no task is left incomplete.
 - **Race Condition Prevention for Clusters**: Multiple workers can run in parallel in a clustered setup, with safeguards to prevent race conditions:
-   - Redis-based locks ensure only one worker processes a task at a time.
-   - Database `select_for_update()` locks prevent concurrent updates to task rows.
+  - Redis-based locks ensure only one worker processes a task at a time.
+  - Database `select_for_update()` locks prevent concurrent updates to task rows.
 - **Graceful Shutdown**: Workers listen for termination signals (e.g., `SIGINT`, `SIGTERM`) and shut down gracefully. Pending tasks are finished before stopping, ensuring no interruptions during processing.
 - **Execution Order**: After a worker restart, all **`PENDING`** tasks are processed first, followed by retryable **`FAILED`** tasks. This ensures new tasks receive immediate attention while failed tasks are retried in order.
 - **Task Execution Insights**: Each task includes the following timestamps for transparency and debugging:
-   - **`created_at`**: When the task was created.
-   - **`started_at`**: When the task started processing.
-   - **`finished_at`**: When the task finished processing.
-   - **`duration`**: Total time (in seconds) spent processing the task.
+  - **`created_at`**: When the task was created.
+  - **`started_at`**: When the task started processing.
+  - **`finished_at`**: When the task finished processing.
+  - **`duration`**: Total time (in seconds) spent processing the task.
 
 ---
 
@@ -51,40 +51,40 @@ This project aims to address these issues by:
 
 1. Install the package:
 
-   ```bash
-   pip install django-task-worker
-   ```
+    ```bash
+    pip install django-task-worker
+    ```
 
 2. Add `worker` to your `INSTALLED_APPS` in `settings.py`:
 
-   ```python
-   INSTALLED_APPS = [
+    ```python
+    INSTALLED_APPS = [
        ...,
        "django_task_worker",
-   ]
-   ```
+    ]
+    ```
 
 3. Configure Redis in your `settings.py`:
 
-   ```python
-   import os
-   ...
-   REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-   MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 2))
-   ```
+    ```python
+    import os
+    ...
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 2))
+    ```
 
 4. Run migrations to create the `DatabaseTask` table:
 
-   ```bash
-   python manage.py makemigrations django_task_worker
-   python manage.py migrate
-   ```
+    ```bash
+    python manage.py makemigrations django_task_worker
+    python manage.py migrate
+    ```
 
 5. Start the worker process using the management command:
 
-   ```bash
-   python manage.py run_worker
-   ```
+    ```bash
+    python manage.py run_worker
+    ```
 
 ---
 ## **Usage**
@@ -237,36 +237,52 @@ from django_task_worker.models import DatabaseTask
 - `status` (str): Current status (`PENDING`, `PROGRESS`, `COMPLETED`, or `FAILED`).
 - `result` (str): Task result after completion.
 - `error` (str): Error message if the task fails.
+- `retry_count` (int): Number of times the task has been retried.'
+- `created_at` (DateTime): Task creation timestamp.
+- `updated_at` (DateTime): Task last update timestamp.
+- `started_at` (DateTime): Task start timestamp.
+- `finished_at` (DateTime): Task finish timestamp.
+- `duration` (float): Total time spent processing the task (in seconds).
 
 ---
 
 ### **Quick Example**
 
-1. **Define a Task** in `your_app/your_tasks.py`:
-   ```
-   def multiply_numbers(a, b):
+1. **Define a Task** in `app/tasks.py`:
+    ```
+    def multiply_numbers(a, b):
        return a * b
-   ```
+    ```
 
 2. **Create and Run the Task**:
-   ```
-   from django_task_worker.client import create_task, wait_for_completion
-
-   # Create a task
-   task = create_task("your_app.your_tasks.multiply_numbers", args=[2, 3])
-
-   # Wait for completion
-   result = wait_for_completion(task.id, timeout=10)
-   if result:
+    ```
+    from django_task_worker.client import create_task, wait_for_completion
+    
+    # Create a task
+    task = create_task("app.tasks.multiply_numbers", args=[2, 3])
+    
+    # Wait for completion
+    result = wait_for_completion(task.id, timeout=10)
+    if result:
        print(f"Task Result: {result.result}")
-   ```
+    ```
 
 3. **Run the Worker**:
-   ```
-   python manage.py run_worker
-   ```
+    ```
+    python manage.py run_worker
+    ```
 
-The worker will pick up the task, execute `multiply_numbers(2, 3)`, and store the result in the database.
+4. **Test using Django Shell**:
+    ```
+    python manage.py shell
+    ```
+    ```
+    from django_task_worker.client import create_task, wait_for_completion
+    task = create_task("app.tasks.multiply_numbers", args=[2, 3])
+    result = wait_for_completion(task.id, timeout=10)
+    print(result)  # Task srzm5AdyjhEGJVeL3WZiWN: app.tasks.multiply_numbers (COMPLETED)
+    print(result.result)  # "6"
+    ```
 
 ---
 
@@ -277,6 +293,7 @@ docker-compose.yml
 services:
   db:
     image: postgres:latest
+    restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -293,8 +310,8 @@ services:
         max-file: "1"
 
   redis:
-    image: redis:7.0
-    command: ["redis-server"]
+    image: redis:latest
+    restart: always
     volumes:
       - redis_data:/data
     ports:
@@ -310,6 +327,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: always
     environment:
       DB_HOST: db
       DB_PORT: ${DB_PORT}
@@ -335,6 +353,7 @@ services:
       context: .
       dockerfile: Dockerfile
     command: ["python", "manage.py", "run_worker"]
+    restart: always
     environment:
       DB_HOST: db
       DB_PORT: 5432

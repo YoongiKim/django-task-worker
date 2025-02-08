@@ -39,6 +39,11 @@ def wait_for_completion(task_id, timeout=300) -> DatabaseTask | None:
     start_time = time.time()
     try:
         while time.time() - start_time < timeout:
+            # Check if the task is already finished
+            task = DatabaseTask.objects.get(id=task_id)
+            if task.status in ("SUCCESS", "FAILURE"):
+                return task
+
             message = pubsub.get_message(ignore_subscribe_messages=True, timeout=1)
             if message:
                 if message["type"] == "message":
