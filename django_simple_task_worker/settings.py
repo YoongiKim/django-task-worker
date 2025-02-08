@@ -11,6 +11,10 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -76,13 +80,18 @@ WSGI_APPLICATION = 'django_simple_task_worker.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'simple_task_worker'),
+        'USER': os.environ.get('DB_USER', 'root'),
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+    },
 }
 
 # Redis settings
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 2))
 
 
 # Password validation

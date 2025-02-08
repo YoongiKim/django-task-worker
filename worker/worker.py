@@ -15,10 +15,11 @@ from worker.logger import logger
 from worker.models import DatabaseTask
 
 RUNNING = True
-MAX_RETRIES = 2
 
 REDIS_URL = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "task_events"
+
+MAX_RETRIES = getattr(settings, "MAX_RETRIES", 0)
 
 def handle_shutdown_signal(signum, frame):
     global RUNNING
@@ -28,7 +29,7 @@ def run_worker():
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
 
-    logger.info(f"[Worker] Starting (MAX_RETRIES={MAX_RETRIES}). Using Redis URL: {REDIS_URL}")
+    logger.info(f"Started task worker with Redis URL: {REDIS_URL}")
 
     redis_client = redis.Redis.from_url(REDIS_URL)
     pubsub = redis_client.pubsub()
@@ -66,16 +67,15 @@ def run_worker():
                     task_id = payload.get("task_id")
 
                     if event == "task_created" and task_id is not None:
-                        logger.info(f"[Worker] Received 'task_created' event for ID={task_id}")
                         _process_task_by_id(task_id, redis_client)
                 except json.JSONDecodeError:
-                    logger.error("[Worker] Invalid JSON message received.")
+                    logger.error("Invalid JSON message received.")
 
         except Exception as e:
-            logger.error(f"[Worker] Unexpected error in main loop: {e}")
+            logger.error(f"Unexpected error in main loop: {e}")
             time.sleep(2)
 
-    logger.info("[Worker] Stopping gracefully...")
+    logger.info("Stopping gracefully...")
     pubsub.close()
 
 def _mark_stale_progress_tasks():
@@ -111,31 +111,25 @@ def _force_fail_stale_task(task: DatabaseTask):
                 fresh.retry_count += 1
                 fresh.finished_at = timezone.now()
                 fresh.duration = (fresh.finished_at - fresh.started_at).total_seconds()
-                fresh.error = "[Worker] Task was stale (worker died?), forcibly marking FAILED."
+                fresh.error = "Task was stale (worker died?), forcibly marking FAILED."
 
                 if fresh.retry_count < MAX_RETRIES:
                     fresh.status = "PENDING"
-                    logger.warning(f"[Worker] Task {fresh.id} was stale in PROGRESS. Retrying (retry_count={fresh.retry_count}).")
+                    logger.warning(f"Task {fresh.id} was stale in PROGRESS. Retrying (retry_count={fresh.retry_count}).")
                     fresh.save()
                     _publish_event("task_requeued", fresh.id)
                 else:
                     fresh.status = "FAILED"
-                    logger.warning(f"[Worker] Task {fresh.id} final FAILURE after stale. Error: {fresh.error}")
+                    logger.warning(f"Task {fresh.id} final FAILURE after stale. Error: {fresh.error}")
                     fresh.save()
                     _publish_event("task_failed", fresh.id)
     except DatabaseTask.DoesNotExist:
         # Might have been deleted or changed concurrently
         pass
     except Exception as e:
-        logger.error(f"[Worker] Could not force-fail stale task {task.id}: {e}")
+        logger.error(f"Could not force-fail stale task {task.id}: {e}")
 
 def _process_task_by_id(task_id, redis_client):
-    try:
-        DatabaseTask.objects.get(id=task_id)
-    except DatabaseTask.DoesNotExist:
-        logger.error(f"[Worker] Task {task_id} not found.")
-        return
-
     # Random short delay to reduce simultaneous lock attempts
     time.sleep(random.uniform(0, 0.1))
 
@@ -167,17 +161,18 @@ def _process_task_by_id(task_id, redis_client):
         start_time = time.time()
         task_timeout = fresh_task.timeout or 300
         with ThreadingTimeout(task_timeout) as to_ctx:
-            if to_ctx.state == to_ctx.EXECUTED:
-                result = _execute_task(fresh_task)
-                _mark_completed(fresh_task, result, start_time)
-            else:
-                _mark_failed(fresh_task, "Task timed out", start_time)
+            result = _execute_task(fresh_task)
+
+        if to_ctx.state == to_ctx.EXECUTED:
+            _mark_completed(fresh_task, result, start_time)
+        else:
+            _mark_failed(fresh_task, "Task timed out", start_time)
 
     except Exception as exc:
         try:
             _mark_failed(fresh_task, str(exc), time.time())
         except Exception as e:
-            logger.error(f"[Worker] Could not mark task {task_id} as failed: {exc} by {e}")
+            logger.error(f"Could not mark task {task_id} as failed: {exc} by {e}")
     finally:
         _release_redis_lock(redis_client, lock_key)
 
@@ -186,23 +181,23 @@ def _execute_task(task: DatabaseTask):
     Dynamically import, refresh, and call the function specified by `task.name`.
     Assumes the module path starts with 'worker.tasks', and task.name is formatted as 'module_name.function_name'.
     """
+    logger.info(f"Running task {task.id}: {task.name}")
     try:
         module_name, func_name = task.name.rsplit(".", 1)
-        full_module_name = f"worker.tasks.{module_name}"
     except ValueError:
         raise ValueError(f'The task name "{task.name}" is not formatted correctly')
 
     try:
-        module = importlib.import_module(full_module_name)
+        module = importlib.import_module(module_name)
         module = importlib.reload(module)
         func = getattr(module, func_name)
         return func(*task.args, **task.kwargs)
     except ModuleNotFoundError:
-        raise ImportError(f"[Worker] Module 'worker.tasks.{module_name}' not found.")
+        raise ImportError(f"Module '{module_name}' not found.")
     except AttributeError:
-        raise ImportError(f"[Worker] Function '{func_name}' not found in 'worker.tasks.{module_name}'.")
+        raise ImportError(f"Function '{func_name}' not found in '{module_name}'.")
     except Exception as e:
-        raise ImportError(f"[Worker] Error executing task '{task.name}': {e}")
+        raise ImportError(f"Error while executing task '{task.name}': {e}")
 
 def _mark_completed(task: DatabaseTask, result, start_time: float):
     duration = time.time() - start_time
@@ -214,7 +209,7 @@ def _mark_completed(task: DatabaseTask, result, start_time: float):
         fresh.result = str(result)
         fresh.save()
 
-    logger.info(f"[Worker] Task {task.id} completed successfully.")
+    logger.info(f"Task {task.id} completed successfully.")
     _publish_event("task_finished", task.id)
 
 def _mark_failed(task: DatabaseTask, error_msg: str, start_time: float):
@@ -228,12 +223,12 @@ def _mark_failed(task: DatabaseTask, error_msg: str, start_time: float):
 
         if fresh.retry_count < MAX_RETRIES:
             fresh.status = "PENDING"
-            logger.warning(f"[Worker] Task {fresh.id} failed. Retrying (retry_count={fresh.retry_count}).")
+            logger.warning(f"Task {fresh.id} failed. Retrying (retry_count={fresh.retry_count}).")
             fresh.save()
             _publish_event("task_requeued", fresh.id)
         else:
             fresh.status = "FAILED"
-            logger.warning(f"[Worker] Task {fresh.id} final FAILURE after {fresh.retry_count} attempts. Error: {error_msg}")
+            logger.warning(f"Task {fresh.id} final FAILURE after {fresh.retry_count} attempts. Error: {error_msg}")
             fresh.save()
             _publish_event("task_failed", fresh.id)
 
@@ -241,7 +236,7 @@ def _release_redis_lock(redis_client, lock_key: str):
     try:
         redis_client.delete(lock_key)
     except Exception as e:
-        logger.error(f"[Worker] Error releasing Redis lock {lock_key}: {e}")
+        logger.error(f"Error releasing Redis lock {lock_key}: {e}")
 
 def _publish_event(event_name: str, task_id: int):
     payload = {"event": event_name, "task_id": task_id}

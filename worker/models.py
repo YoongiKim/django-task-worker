@@ -1,4 +1,5 @@
 from django.db import models
+from shortuuid.django_fields import ShortUUIDField
 
 class DatabaseTask(models.Model):
     STATUS_CHOICES = [
@@ -7,7 +8,7 @@ class DatabaseTask(models.Model):
         ("COMPLETED", "Completed"),
         ("FAILED", "Failed"),
     ]
-    id = models.BigAutoField(primary_key=True)
+    id = ShortUUIDField(primary_key=True, editable=False)
     name = models.CharField(max_length=255)
     args = models.JSONField(blank=True, null=True)
     kwargs = models.JSONField(blank=True, null=True)

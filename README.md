@@ -47,46 +47,6 @@ This project aims to address these issues by:
 
 ---
 
-## **Use Cases**
-
-1. **Resilient Task Queue Without Broker Persistence**  
-   Unlike Celery, which requires Redis or RabbitMQ to persist task queues, `django-simple-task-worker` stores all tasks in the database. This eliminates dependency on Redis persistence, ensuring no data loss during Redis flushes, restarts, or unavailability.
-
-2. **Graceful Recovery from Worker Crashes**  
-   If a worker crashes while processing a task (`status="PROGRESS"`), the system automatically detects these stale tasks during a housekeeping step. If the task’s timeout has elapsed, it is:
-   - Marked as `FAILED` with an error message (e.g., `Task was stale. Worker crashed.`).
-   - Optionally re-queued for retry if retries are still available.
-
-   This ensures no task remains stuck in `PROGRESS` indefinitely.
-
-3. **Cluster-Friendly Task Execution**  
-   For setups with multiple workers:
-   - Redis-based locks (`task_lock:{id}`) prevent more than one worker from processing the same task concurrently.
-   - Database `select_for_update()` ensures safe updates to task status and prevents race conditions during retries or housekeeping.
-   - Workers can operate independently without interfering with one another.
-
-4. **Graceful Shutdown for Running Workers**  
-   Workers gracefully handle termination signals (`SIGINT`, `SIGTERM`):
-   - No new tasks are picked up after receiving a signal.
-   - Tasks already in `PROGRESS` are allowed to finish before the worker shuts down.
-   - This ensures tasks are never abandoned mid-execution.
-
-5. **Timeout Prevention for Long-Running Tasks**  
-   Tasks with an unexpected delay or stuck processing are terminated forcefully after their timeout. This prevents the system from hanging indefinitely on problematic tasks.
-
-6. **Execution Order After Restart**  
-   After a worker restart, all **`PENDING`** tasks are processed first, ensuring new tasks are executed promptly. Retryable **`FAILED`** tasks are processed next, adhering to the task creation order.
-
-7. **Detailed Task Insights**  
-   Each task includes metadata to help track and debug its lifecycle:
-   - `created_at`: When the task was added to the queue.
-   - `started_at`: When processing began.
-   - `finished_at`: When processing finished (or failed).
-   - `duration`: Total execution time (in seconds).
-     This makes it easy to measure performance and identify issues during execution.
-
----
-
 ## **Installation**
 
 1. Install the package:
@@ -100,127 +60,211 @@ This project aims to address these issues by:
    ```python
    INSTALLED_APPS = [
        ...,
-       "worker",
+       "django_simple_task_worker",
    ]
    ```
 
 3. Configure Redis in your `settings.py`:
 
    ```python
-   REDIS_URL = "redis://localhost:6379/0"  # Update this to match your Redis setup
+   import os
+   ...
+   REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+   MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 2))
    ```
 
 4. Run migrations to create the `DatabaseTask` table:
 
    ```bash
-   python manage.py makemigrations worker
+   python manage.py makemigrations django_simple_task_worker
    python manage.py migrate
    ```
 
----
+5. Start the worker process using the management command:
 
+   ```bash
+   python manage.py run_worker
+   ```
+
+---
 ## **Usage**
 
-### **1. Define Tasks**
+### **How Task Functions are Executed**
 
-Tasks are Python functions stored in the `worker/tasks/` directory. For example:
+The worker dynamically imports and executes the task functions specified in the `name` field of the task. The `name` must be in the format:
 
-```python
-# worker/tasks/example_task.py
+```
+module_name.function_name
+```
 
-def example_function(a, b):
+The worker assumes all modules are accessible from the Django project's root directory.
+
+---
+
+### **Directory Structure Example**
+
+Your Django project should be organized as follows:
+
+```
+your_project/
+├── config/
+│   ├── settings.py          # Django settings file
+│   └── wsgi.py
+├── manage.py                # Django management script
+├── your_app/
+│   ├── your_tasks.py        # Define task functions here
+│   └── models.py
+└── django_simple_task_worker/  # Which is installed via pip
+    ├── models.py            # Includes DatabaseTask
+    ├── client.py            # Provides create_task and wait_for_completion
+    └── worker.py            # Worker logic
+```
+
+Define task functions in a module like `your_app/your_tasks.py`.
+
+#### **Example Task Definition**
+```
+# your_app/your_tasks.py
+
+def add_numbers(a, b):
     return a + b
 ```
 
-### **2. Create Tasks**
+---
 
-Create tasks in your application code using the `create_task` function:
+### **How to Create and Run a Task**
 
-```python
-from worker.client import create_task
+#### **1. Create a Task**
+
+Use `create_task` to add a task to the database and notify the worker:
+
+```
+from django_simple_task_worker.client import create_task
 
 task = create_task(
-    name="example_task.example_function",  # Task's module and function
-    args=[1, 2],                           # Positional arguments
-    kwargs={},                             # Keyword arguments
-    timeout=300                            # Task timeout in seconds (optional)
+    name="your_app.your_tasks.add_numbers",  # Function path
+    args=[10, 20],                           # Positional arguments
+    kwargs={},                               # Keyword arguments
+    timeout=300                              # Timeout in seconds
 )
+
+print(f"Task {task.id} created with status: {task.status}")
 ```
 
-This queues the task in the database and sends a `task_created` event via Redis Pub/Sub.
+---
 
-### **3. Run the Worker**
+#### **2. Run the Worker**
 
-Start the worker using the management command:
+Start the worker using the Django management command:
 
-```bash
+```
 python manage.py run_worker
 ```
 
-The worker will:
+The worker will process tasks in the background.
 
-- Process tasks from the database queue.
-- Receive new task events in real-time via Redis Pub/Sub.
-- Automatically retry failed tasks and handle timeouts.
+---
 
-### **4. Wait for Task Completion (Optional)**
+#### **3. Wait for Task Completion**
 
-If you need to wait for a task to finish, use the `wait_for_completion` function:
+Use `wait_for_completion` to wait for a task to finish:
 
-```python
-from worker.client import wait_for_completion
+```
+from django_simple_task_worker.client import wait_for_completion
 
-result = wait_for_completion(task_id=task.id, timeout=60)
+result = wait_for_completion(task_id=task.id, timeout=10)
 
-if result is None:
-    print("Task did not finish in time!")
+if result:
+    print(f"Task {result.id} completed with status: {result.status}")
+    print(f"Result: {result.result}")
 else:
-    print(f"Task finished with status: {result.status}")
-    print(f"Task result: {result.result}")
-    print(f"Task error (if any): {result.error}")
+    print("Task did not complete within the timeout.")
 ```
 
 ---
 
-## **Configuration**
+### **API Reference**
 
-### **Settings**
+#### **`create_task`**
+```
+def create_task(name, args=None, kwargs=None, timeout=300) -> DatabaseTask:
+    """
+    Create a task in the database and notify the worker via Redis.
 
-- **`REDIS_URL`**: Redis connection URL. Default: `"redis://localhost:6379/0"`.
-- **`MAX_RETRIES`**: Maximum number of retries for a failed task. Default: `2`.
+    Args:
+        name (str): Function to execute (e.g., 'module_name.function_name').
+        args (list, optional): Positional arguments for the function. Defaults to an empty list.
+        kwargs (dict, optional): Keyword arguments for the function. Defaults to an empty dict.
+        timeout (int, optional): Task timeout in seconds. Defaults to 300.
 
-### **Task Timeouts**
+    Returns:
+        DatabaseTask: The created task object.
+    """
+```
 
-Set a timeout for tasks during creation. Tasks that exceed their timeout will be marked as `FAILED`.
+#### **`wait_for_completion`**
+```
+def wait_for_completion(task_id, timeout=300) -> DatabaseTask | None:
+    """
+    Wait for a task to complete or fail within the given timeout.
 
-```python
-task = create_task("example_task.example_function", args=[1, 2], timeout=120)
+    Args:
+        task_id (int): The ID of the task to wait for.
+        timeout (int, optional): Maximum time to wait in seconds. Defaults to 300.
+
+    Returns:
+        DatabaseTask: The task object if completed successfully.
+        None: If the task does not complete within the timeout.
+    """
 ```
 
 ---
 
-## **Examples**
+### **Task Model**
 
-### **Example Task**
+All tasks are stored in the database using the `DatabaseTask` model:
 
-Define a simple task in `worker/tasks/math.py`:
-
-```python
-def add(a, b):
-    return a + b
+```
+from django_simple_task_worker.models import DatabaseTask
 ```
 
-### **Queue and Process the Task**
+#### **DatabaseTask Fields**:
+- `name` (str): The task function in the format `module_name.function_name`.
+- `args` (JSON): Positional arguments for the task.
+- `kwargs` (JSON): Keyword arguments for the task.
+- `timeout` (int): Time in seconds before the task times out.
+- `status` (str): Current status (`PENDING`, `PROGRESS`, `COMPLETED`, or `FAILED`).
+- `result` (str): Task result after completion.
+- `error` (str): Error message if the task fails.
 
-```python
-from worker.client import create_task, wait_for_completion
+---
 
-# Create a task
-task = create_task("math.add", args=[3, 5])
+### **Quick Example**
 
-# Wait for the task to complete
-result = wait_for_completion(task_id=task.id, timeout=60)
+1. **Define a Task** in `your_app/your_tasks.py`:
+   ```
+   def multiply_numbers(a, b):
+       return a * b
+   ```
 
-if result and result.status == "COMPLETED":
-    print(f"Task completed successfully: {result.result}")  # Output: Task completed successfully: 8
-```
+2. **Create and Run the Task**:
+   ```
+   from django_simple_task_worker.client import create_task, wait_for_completion
+
+   # Create a task
+   task = create_task("your_app.your_tasks.multiply_numbers", args=[2, 3])
+
+   # Wait for completion
+   result = wait_for_completion(task.id, timeout=10)
+   if result:
+       print(f"Task Result: {result.result}")
+   ```
+
+3. **Run the Worker**:
+   ```
+   python manage.py run_worker
+   ```
+
+The worker will pick up the task, execute `multiply_numbers(2, 3)`, and store the result in the database.
+
+---
