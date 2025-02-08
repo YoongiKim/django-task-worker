@@ -11,8 +11,8 @@ from django.db import transaction
 from django.utils import timezone
 from stopit import ThreadingTimeout
 
-from worker.logger import logger
-from worker.models import DatabaseTask
+from .logger import logger
+from .models import DatabaseTask
 
 RUNNING = True
 
