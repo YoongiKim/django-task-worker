@@ -69,8 +69,9 @@ This project aims to address these issues by:
     ```python
     import os
     ...
+    # Worker settings
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    MAX_RETRIES = int(os.environ.get('MAX_RETRIES', 2))
+    REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', None)
     ```
 
 4. Run migrations to create the `DatabaseTask` table:
@@ -83,8 +84,10 @@ This project aims to address these issues by:
 5. Start the worker process using the management command:
 
     ```bash
-    python manage.py run_worker
+    python manage.py run_worker --retry 1 --concurrency 2
     ```
+    - `--retry`: Maximum number of retries for failed tasks (default: 0).
+    - `--concurrency`: Number of threads to process tasks concurrently (default: 1).
 
 ---
 ## **Usage**
@@ -402,9 +405,9 @@ CMD ["gunicorn", "-b", "0.0.0.0:8000", "config.wsgi:application"]
 ```
 
 ### **TODO List**
-- [ ] Redis Authentication
-- [ ] Concurrency
-- [ ] Exponential backoffs
+- [x] Redis Authentication
+- [x] Concurrency
+- [x] Exponential back-offs
 - [ ] Scheduled tasks
 - [ ] Advanced django admin
 - [ ] Detailed error logging

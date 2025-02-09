@@ -1,5 +1,8 @@
 from django.db import models
 from shortuuid.django_fields import ShortUUIDField
+from django.utils import timezone
+from datetime import timedelta
+
 
 class DatabaseTask(models.Model):
     STATUS_CHOICES = [
@@ -19,6 +22,7 @@ class DatabaseTask(models.Model):
     error = models.TextField(blank=True, null=True)
 
     retry_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(blank=True, null=True, default=None)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
