@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-task-worker"
-version = "0.0.5"
+version = "0.0.6"
 description = "Task worker for Django using Redis and a database queue"
 readme = "README.md"
 requires-python = ">=3.6"
@@ -36,7 +36,8 @@ dependencies = [
     "django>=3.2",
     "redis>=4.5.0",
     "shortuuid>=1.0.11",
-    "stopit>=1.1.2"
+    "stopit>=1.1.2",
+    "setuptools>=65.5.1",
 ]
 
 [project.urls]
