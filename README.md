@@ -115,6 +115,7 @@ your_project/
 │   └── wsgi.py
 ├── manage.py                # Django management script
 ├── your_app/
+│   ├── __init__.py          # __init__.py must be present
 │   ├── your_tasks.py        # Define task functions here
 │   └── models.py
 └── django_task_worker/  # Which is installed via pip

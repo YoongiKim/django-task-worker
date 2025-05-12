@@ -15,6 +15,9 @@ import concurrent.futures
 from .logger import logger
 from .models import DatabaseTask
 
+from sentry_sdk import capture_exception
+import sys
+
 RUNNING = True
 
 REDIS_URL = getattr(settings, "REDIS_URL", "redis://localhost:6379/0")
@@ -35,6 +38,8 @@ def run_worker(max_retries=0, worker_concurrency=1):
     redis_client = redis.Redis.from_url(REDIS_URL, password=REDIS_PASSWORD)
     pubsub = redis_client.pubsub()
     pubsub.subscribe(REDIS_CHANNEL)
+
+    logger.info("Connected to Redis server and subscribed to channel.")
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=worker_concurrency)
 
@@ -68,7 +73,7 @@ def run_worker(max_retries=0, worker_concurrency=1):
                     task_id = payload.get("task_id")
 
                     if event == "task_created" and task_id is not None:
-                        executor.submit(_process_task_by_id, task_id, redis_client)
+                        executor.submit(_process_task_by_id, task_id, redis_client, max_retries)
                 except json.JSONDecodeError:
                     logger.error("Invalid JSON message received.")
 
@@ -132,6 +137,8 @@ def _force_fail_stale_task(task: DatabaseTask, max_retries: int):
         logger.error(f"Could not force-fail stale task {task.id}: {e}")
 
 def _process_task_by_id(task_id, redis_client, max_retries: int):
+    logger.info(f"Processing task {task_id}...")
+
     # Random short delay to reduce simultaneous lock attempts
     time.sleep(random.uniform(0, 0.1))
 
@@ -177,7 +184,7 @@ def _process_task_by_id(task_id, redis_client, max_retries: int):
 
     except Exception as exc:
         try:
-            _mark_failed(fresh_task, str(exc), time.time(), max_retries)
+            _mark_failed(fresh_task, str(exc), time.time(), max_retries, exc=exc)
         except Exception as e:
             logger.error(f"Could not mark task {task_id} as failed: {exc} by {e}")
     finally:
@@ -199,10 +206,13 @@ def _execute_task(task: DatabaseTask):
         module = importlib.reload(module)
         func = getattr(module, func_name)
         return func(*task.args, **task.kwargs)
-    except ModuleNotFoundError:
-        raise ImportError(f"Module '{module_name}' not found.")
-    except AttributeError:
-        raise ImportError(f"Function '{func_name}' not found in '{module_name}'.")
+    except ModuleNotFoundError as e:
+        raise e
+    except AttributeError as e:
+        raise ImportError(f'Function "{func_name}" not found in "{module_name}". '
+                          f'Error: {e} '
+                          f'name should be like "module_name.function_name". '
+                          f'Base import paths are {sys.path}.')
     except Exception as e:
         raise ImportError(f"Error while executing task '{task.name}': {e}")
 
@@ -219,8 +229,12 @@ def _mark_completed(task: DatabaseTask, result, start_time: float):
     logger.info(f"Task {task.id} completed successfully.")
     _publish_event("task_finished", task.id)
 
-def _mark_failed(task: DatabaseTask, error_msg: str, start_time: float, max_retries: int):
+def _mark_failed(task: DatabaseTask, error_msg: str, start_time: float, max_retries: int, exc=None):
     duration = time.time() - start_time
+
+    if exc:
+        capture_exception(exc)
+
     with transaction.atomic():
         fresh = DatabaseTask.objects.select_for_update().get(id=task.id)
         fresh.retry_count += 1
